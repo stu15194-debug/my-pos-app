@@ -9,10 +9,23 @@
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 15px; background: #f4f4f9; }
     .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 2px solid #007bff; }
+    
+    /* สรุปยอดรวมด้านบน */
+    .summary-card { background: #e9ecef; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .summary-card div { text-align: center; }
+    .summary-card h3 { margin: 5px 0 0 0; }
+    
+    /* รายการสินค้า */
+    .cart-header { display: flex; justify-content: space-between; font-weight: bold; padding-bottom: 5px; border-bottom: 2px solid #ddd; margin-bottom: 5px; }
+    .cart-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; font-size: 15px; }
+    .item-name { flex: 2; }
+    .item-qty { flex: 1; text-align: center; }
+    .item-price { flex: 1; text-align: right; }
+
     input, button { width: 100%; padding: 12px; margin: 6px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
-    button.btn-success { background: #28a745; color: white; font-weight: bold; border: none; cursor: pointer; }
+    button.btn-success { background: #28a745; color: white; font-weight: bold; border: none; cursor: pointer; margin-top: 15px; }
     button.btn-primary { background: #007bff; color: white; font-weight: bold; border: none; cursor: pointer; }
-    .cart-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; font-size: 16px; }
+    
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
     .modal-content { background: white; padding: 20px; border-radius: 10px; width: 85%; max-width: 400px; }
   </style>
@@ -22,50 +35,78 @@
 <div class="container">
   <h2 style="text-align: center; color: #333; margin-top: 0;">ระบบคิดเงิน POS</h2>
   
-  <!-- สแกนเนอร์พร้อมส่องตลอดเวลา -->
+  <!-- 1. ช่องสแกนบาร์โค้ด -->
   <div id="reader"></div>
 
-  <h3>รายการสินค้า</h3>
+  <!-- 2. แสดงสรุปจำนวนรวมและราคารวม -->
+  <div class="summary-card">
+    <div>
+      <small>จำนวนทั้งหมด</small>
+      <h3 style="color: #007bff;"><span id="total-qty">0</span> ชิ้น</h3>
+    </div>
+    <div>
+      <small>ยอดรวมทั้งสิ้น</small>
+      <h3 style="color: #d9534f;"><span id="total-price">0</span> บาท</h3>
+    </div>
+  </div>
+
+  <!-- 3. รายการสินค้าและจำนวน -->
+  <div class="cart-header">
+    <span class="item-name">สินค้า</span>
+    <span class="item-qty">จำนวน</span>
+    <span class="item-price">รวม</span>
+  </div>
   <div id="cart"></div>
-  <h3 style="color: #d9534f;">ยอดรวม: <span id="total-price">0</span> บาท</h3>
+
+  <!-- 4. ปุ่มชำระเงิน -->
   <button class="btn-success" onclick="clearCart()">ชำระเงินเรียบร้อย</button>
 </div>
 
-<!-- ป๊อปอัปเด้งอัตโนมัติเมื่อเจอบาร์โค้ดใหม่ -->
+<!-- ป๊อปอัปบันทึกสินค้าใหม่ -->
 <div id="new-product-modal" class="modal">
   <div class="modal-content">
     <h3 style="margin-top:0; color:#007bff;">พบสินค้าใหม่!</h3>
     <p>กรุณากรอกข้อมูลเพื่อบันทึกลงระบบ</p>
     <input type="text" id="p-barcode" readonly style="background: #e9ecef;">
     <input type="text" id="p-name" placeholder="ชื่อสินค้า">
-    <input type="number" id="p-price" placeholder="ราคา (บาท)">
+    <input type="number" id="p-price" placeholder="ราคาต่อชิ้น (บาท)">
     <button class="btn-primary" onclick="saveProduct()">บันทึกสินค้า</button>
     <button style="background:#6c757d; color:white; border:none;" onclick="closeModal()">ยกเลิก</button>
   </div>
 </div>
 
 <script>
-  // *** วาง Web App URL ของคุณในเครื่องหมายคำพูดด้านล่าง ***
+  // *** ใส่ Web App URL ของ Google Apps Script (ลงท้ายด้วย /exec) ***
   const API_URL = "https://stu15194-debug.github.io/my-pos-app/";
 
   let isScanning = true;
-  let cart = [];
+  let cart = {}; // เก็บสินค้าในรูปแบบ Object เพื่อรวมจำนวนชิ้น { barcode: { name, price, qty } }
 
   function onScanSuccess(decodedText) {
-    if (!isScanning) return; // ป้องกันการสแกนซ้ำขณะกำลังประมวลผล
+    if (!isScanning) return;
     isScanning = false;
 
-    // ส่งไปเช็กใน Google Sheets
+    // ถ้าเคยสแกนสินค้านี้แล้วในตะกร้า ให้บวกจำนวนเพิ่มทันทีโดยไม่ต้องส่งไปเช็ก API
+    if (cart[decodedText]) {
+      cart[decodedText].qty += 1;
+      updateCart();
+      setTimeout(() => { isScanning = true; }, 1200);
+      return;
+    }
+
+    // ถ้ายังไม่มีในตะกร้า ให้ไปดึงข้อมูลจาก Google Sheets
     fetch(`${API_URL}?action=get&barcode=${decodedText}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          // ถ้ามีสินค้า -> เพิ่มเข้าตะกร้าทันที
-          cart.push(data);
+          cart[decodedText] = {
+            name: data.name,
+            price: parseFloat(data.price),
+            qty: 1
+          };
           updateCart();
-          setTimeout(() => { isScanning = true; }, 1500); // เว้นระยะ 1.5 วิ ก่อนสแกนชิ้นต่อไป
+          setTimeout(() => { isScanning = true; }, 1200);
         } else {
-          // ถ้าเป็นสินค้าใหม่ -> เด้งหน้าต่างเพิ่มสินค้าทันที
           document.getElementById('p-barcode').value = decodedText;
           document.getElementById('new-product-modal').style.display = 'flex';
         }
@@ -78,18 +119,34 @@
   function updateCart() {
     const cartDiv = document.getElementById('cart');
     cartDiv.innerHTML = '';
-    let total = 0;
-    cart.forEach(item => {
-      total += parseFloat(item.price);
-      cartDiv.innerHTML += `<div class="cart-item"><span>${item.name}</span><span><b>${item.price}</b> บาท</span></div>`;
+    
+    let totalQty = 0;
+    let totalPrice = 0;
+
+    Object.keys(cart).forEach(barcode => {
+      const item = cart[barcode];
+      const itemTotal = item.price * item.qty;
+      
+      totalQty += item.qty;
+      totalPrice += itemTotal;
+
+      cartDiv.innerHTML += `
+        <div class="cart-item">
+          <span class="item-name">${item.name}</span>
+          <span class="item-qty">x${item.qty}</span>
+          <span class="item-price"><b>${itemTotal.toLocaleString()}</b></span>
+        </div>
+      `;
     });
-    document.getElementById('total-price').innerText = total;
+
+    document.getElementById('total-qty').innerText = totalQty;
+    document.getElementById('total-price').innerText = totalPrice.toLocaleString();
   }
 
   function clearCart() {
-    if (cart.length === 0) return alert("ไม่มีสินค้าในตะกร้า");
+    if (Object.keys(cart).length === 0) return alert("ไม่มีสินค้าในตะกร้า");
     alert("ชำระเงินเรียบร้อย!");
-    cart = [];
+    cart = {};
     updateCart();
   }
 
@@ -107,8 +164,11 @@
     .then(res => res.json())
     .then(data => {
       alert(data.message);
-      // เพิ่มเข้าตะกร้าทันทีหลังบันทึกเสร็จ
-      cart.push({ barcode, name, price });
+      cart[barcode] = {
+        name: name,
+        price: parseFloat(price),
+        qty: 1
+      };
       updateCart();
       closeModal();
     });
