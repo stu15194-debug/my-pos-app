@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POS System</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 15px; background: #f4f4f9; }
+    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .nav { display: flex; gap: 10px; margin-bottom: 20px; }
+    .nav button { flex: 1; padding: 10px; border: none; background: #ddd; border-radius: 5px; cursor: pointer; font-weight: bold; }
+    .nav button.active { background: #007bff; color: white; }
+    .section { display: none; }
+    .section.active { display: block; }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
+    input, button { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+    button.btn-primary { background: #28a745; color: white; font-weight: bold; border: none; cursor: pointer; }
+    .cart-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 8px 0; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="nav">
+    <button id="btn-checkout" class="active" onclick="switchTab('checkout')">คิดเงิน</button>
+    <button id="btn-product" onclick="switchTab('product')">เพิ่ม/แก้ไขสินค้า</button>
+  </div>
+
+  <div id="reader"></div>
+
+  <div id="checkout-section" class="section active">
+    <h3>รายการสินค้าในตะกร้า</h3>
+    <div id="cart"></div>
+    <h4>รวมทั้งหมด: <span id="total-price">0</span> บาท</h4>
+    <button class="btn-primary" onclick="clearCart()">ชำระเงินเรียบร้อย</button>
+  </div>
+
+  <div id="product-section" class="section">
+    <h3>เพิ่ม / อัปเดตข้อมูลสินค้า</h3>
+    <input type="text" id="p-barcode" placeholder="บาร์โค้ดสินค้า">
+    <input type="text" id="p-name" placeholder="ชื่อสินค้า">
+    <input type="number" id="p-price" placeholder="ราคาสินค้า">
+    <button class="btn-primary" onclick="saveProduct()">บันทึกลง Google Sheets</button>
+  </div>
+</div>
+
+<script>
+  // วาง URL จาก Google Apps Script ในช่องด้านล่างนี้
+  const API_URL = "https://script.google.com/macros/s/AKfycbx_FNDRty5eHGX59wmor27ksz-NVJcuHPPBWIv5zpXvL-30M_NCjzYE1UWfFcOE6ciI/exec";
+
+  let html5QrcodeScanner;
+  let cart = [];
+  let currentTab = 'checkout';
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('checkout-section').classList.toggle('active', tab === 'checkout');
+    document.getElementById('product-section').classList.toggle('active', tab === 'product');
+    document.getElementById('btn-checkout').classList.toggle('active', tab === 'checkout');
+    document.getElementById('btn-product').classList.toggle('active', tab === 'product');
+  }
+
+  function onScanSuccess(decodedText) {
+    if (currentTab === 'checkout') {
+      fetch(`${API_URL}?action=get&barcode=${decodedText}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            cart.push(data);
+            updateCart();
+          } else {
+            alert("ไม่พบสินค้ารหัสนี้ในระบบ");
+          }
+        });
+    } else if (currentTab === 'product') {
+      document.getElementById('p-barcode').value = decodedText;
+    }
+  }
+
+  function updateCart() {
+    const cartDiv = document.getElementById('cart');
+    cartDiv.innerHTML = '';
+    let total = 0;
+    cart.forEach(item => {
+      total += parseFloat(item.price);
+      cartDiv.innerHTML += `<div class="cart-item"><span>${item.name}</span><span>${item.price} บาท</span></div>`;
+    });
+    document.getElementById('total-price').innerText = total;
+  }
+
+  function clearCart() {
+    if (cart.length === 0) return alert("ไม่มีสินค้าในตะกร้า");
+    alert("บันทึกการชำระเงินสำเร็จ!");
+    cart = [];
+    updateCart();
+  }
+
+  function saveProduct() {
+    const barcode = document.getElementById('p-barcode').value;
+    const name = document.getElementById('p-name').value;
+    const price = document.getElementById('p-price').value;
+
+    if (!barcode || !name || !price) return alert("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+
+    fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ barcode, name, price })
+    })
+    .then(res => res.json())
+    .then(data => {
+      alert(data.message);
+      document.getElementById('p-barcode').value = '';
+      document.getElementById('p-name').value = '';
+      document.getElementById('p-price').value = '';
+    });
+  }
+
+  window.onload = () => {
+    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 150 } });
+    html5QrcodeScanner.render(onScanSuccess);
+  };
+</script>
+
+</body>
+</html>
