@@ -3,79 +3,76 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POS System</title>
+  <title>Smart POS System</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 15px; background: #f4f4f9; }
-    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .nav { display: flex; gap: 10px; margin-bottom: 20px; }
-    .nav button { flex: 1; padding: 10px; border: none; background: #ddd; border-radius: 5px; cursor: pointer; font-weight: bold; }
-    .nav button.active { background: #007bff; color: white; }
-    .section { display: none; }
-    .section.active { display: block; }
-    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
-    input, button { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-    button.btn-primary { background: #28a745; color: white; font-weight: bold; border: none; cursor: pointer; }
-    .cart-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 8px 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 15px; background: #f4f4f9; }
+    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; border: 2px solid #007bff; }
+    input, button { width: 100%; padding: 12px; margin: 6px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+    button.btn-success { background: #28a745; color: white; font-weight: bold; border: none; cursor: pointer; }
+    button.btn-primary { background: #007bff; color: white; font-weight: bold; border: none; cursor: pointer; }
+    .cart-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; font-size: 16px; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+    .modal-content { background: white; padding: 20px; border-radius: 10px; width: 85%; max-width: 400px; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <div class="nav">
-    <button id="btn-checkout" class="active" onclick="switchTab('checkout')">คิดเงิน</button>
-    <button id="btn-product" onclick="switchTab('product')">เพิ่ม/แก้ไขสินค้า</button>
-  </div>
-
+  <h2 style="text-align: center; color: #333; margin-top: 0;">ระบบคิดเงิน POS</h2>
+  
+  <!-- สแกนเนอร์พร้อมส่องตลอดเวลา -->
   <div id="reader"></div>
 
-  <div id="checkout-section" class="section active">
-    <h3>รายการสินค้าในตะกร้า</h3>
-    <div id="cart"></div>
-    <h4>รวมทั้งหมด: <span id="total-price">0</span> บาท</h4>
-    <button class="btn-primary" onclick="clearCart()">ชำระเงินเรียบร้อย</button>
-  </div>
+  <h3>รายการสินค้า</h3>
+  <div id="cart"></div>
+  <h3 style="color: #d9534f;">ยอดรวม: <span id="total-price">0</span> บาท</h3>
+  <button class="btn-success" onclick="clearCart()">ชำระเงินเรียบร้อย</button>
+</div>
 
-  <div id="product-section" class="section">
-    <h3>เพิ่ม / อัปเดตข้อมูลสินค้า</h3>
-    <input type="text" id="p-barcode" placeholder="บาร์โค้ดสินค้า">
+<!-- ป๊อปอัปเด้งอัตโนมัติเมื่อเจอบาร์โค้ดใหม่ -->
+<div id="new-product-modal" class="modal">
+  <div class="modal-content">
+    <h3 style="margin-top:0; color:#007bff;">พบสินค้าใหม่!</h3>
+    <p>กรุณากรอกข้อมูลเพื่อบันทึกลงระบบ</p>
+    <input type="text" id="p-barcode" readonly style="background: #e9ecef;">
     <input type="text" id="p-name" placeholder="ชื่อสินค้า">
-    <input type="number" id="p-price" placeholder="ราคาสินค้า">
-    <button class="btn-primary" onclick="saveProduct()">บันทึกลง Google Sheets</button>
+    <input type="number" id="p-price" placeholder="ราคา (บาท)">
+    <button class="btn-primary" onclick="saveProduct()">บันทึกสินค้า</button>
+    <button style="background:#6c757d; color:white; border:none;" onclick="closeModal()">ยกเลิก</button>
   </div>
 </div>
 
 <script>
-  // วาง URL จาก Google Apps Script ในช่องด้านล่างนี้
-  const API_URL = "https://script.google.com/macros/s/AKfycbx_FNDRty5eHGX59wmor27ksz-NVJcuHPPBWIv5zpXvL-30M_NCjzYE1UWfFcOE6ciI/exec";
+  // *** วาง Web App URL ของคุณในเครื่องหมายคำพูดด้านล่าง ***
+  const API_URL = "https://stu15194-debug.github.io/my-pos-app/";
 
-  let html5QrcodeScanner;
+  let isScanning = true;
   let cart = [];
-  let currentTab = 'checkout';
-
-  function switchTab(tab) {
-    currentTab = tab;
-    document.getElementById('checkout-section').classList.toggle('active', tab === 'checkout');
-    document.getElementById('product-section').classList.toggle('active', tab === 'product');
-    document.getElementById('btn-checkout').classList.toggle('active', tab === 'checkout');
-    document.getElementById('btn-product').classList.toggle('active', tab === 'product');
-  }
 
   function onScanSuccess(decodedText) {
-    if (currentTab === 'checkout') {
-      fetch(`${API_URL}?action=get&barcode=${decodedText}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            cart.push(data);
-            updateCart();
-          } else {
-            alert("ไม่พบสินค้ารหัสนี้ในระบบ");
-          }
-        });
-    } else if (currentTab === 'product') {
-      document.getElementById('p-barcode').value = decodedText;
-    }
+    if (!isScanning) return; // ป้องกันการสแกนซ้ำขณะกำลังประมวลผล
+    isScanning = false;
+
+    // ส่งไปเช็กใน Google Sheets
+    fetch(`${API_URL}?action=get&barcode=${decodedText}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // ถ้ามีสินค้า -> เพิ่มเข้าตะกร้าทันที
+          cart.push(data);
+          updateCart();
+          setTimeout(() => { isScanning = true; }, 1500); // เว้นระยะ 1.5 วิ ก่อนสแกนชิ้นต่อไป
+        } else {
+          // ถ้าเป็นสินค้าใหม่ -> เด้งหน้าต่างเพิ่มสินค้าทันที
+          document.getElementById('p-barcode').value = decodedText;
+          document.getElementById('new-product-modal').style.display = 'flex';
+        }
+      })
+      .catch(() => {
+        isScanning = true;
+      });
   }
 
   function updateCart() {
@@ -84,14 +81,14 @@
     let total = 0;
     cart.forEach(item => {
       total += parseFloat(item.price);
-      cartDiv.innerHTML += `<div class="cart-item"><span>${item.name}</span><span>${item.price} บาท</span></div>`;
+      cartDiv.innerHTML += `<div class="cart-item"><span>${item.name}</span><span><b>${item.price}</b> บาท</span></div>`;
     });
     document.getElementById('total-price').innerText = total;
   }
 
   function clearCart() {
     if (cart.length === 0) return alert("ไม่มีสินค้าในตะกร้า");
-    alert("บันทึกการชำระเงินสำเร็จ!");
+    alert("ชำระเงินเรียบร้อย!");
     cart = [];
     updateCart();
   }
@@ -101,7 +98,7 @@
     const name = document.getElementById('p-name').value;
     const price = document.getElementById('p-price').value;
 
-    if (!barcode || !name || !price) return alert("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+    if (!name || !price) return alert("กรุณากรอกชื่อและราคาให้ครบถ้วน");
 
     fetch(API_URL, {
       method: 'POST',
@@ -110,14 +107,22 @@
     .then(res => res.json())
     .then(data => {
       alert(data.message);
-      document.getElementById('p-barcode').value = '';
-      document.getElementById('p-name').value = '';
-      document.getElementById('p-price').value = '';
+      // เพิ่มเข้าตะกร้าทันทีหลังบันทึกเสร็จ
+      cart.push({ barcode, name, price });
+      updateCart();
+      closeModal();
     });
   }
 
+  function closeModal() {
+    document.getElementById('new-product-modal').style.display = 'none';
+    document.getElementById('p-name').value = '';
+    document.getElementById('p-price').value = '';
+    setTimeout(() => { isScanning = true; }, 1000);
+  }
+
   window.onload = () => {
-    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 150 } });
+    const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 150 } });
     html5QrcodeScanner.render(onScanSuccess);
   };
 </script>
